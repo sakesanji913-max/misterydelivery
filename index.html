@@ -11,68 +11,119 @@
       padding: 0;
       background: #000;
       overflow: hidden;
+      height: 100%;
+      font-family: sans-serif;
     }
-    #unity-container { width: 100%; height: 100vh; position: relative; }
-    #unity-canvas { width: 100%; height: 100%; background: #000; }
-    #unity-loading-bar {
+    #unity-container {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: #000;
+    }
+    #unity-canvas {
+      width: 960px;
+      height: 600px;
+      background: #111;
+    }
+    #loading-screen {
       position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      color: white;
-      font-family: monospace;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: #000;
+      color: #0f0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      z-index: 10;
+      font-size: 20px;
+    }
+    #progress-bar {
+      width: 60%;
+      height: 12px;
+      background: #333;
+      border: 1px solid #0f0;
+      margin-top: 10px;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    #progress-fill {
+      width: 0%;
+      height: 100%;
+      background: #0f0;
+      transition: width 0.3s;
     }
   </style>
 </head>
 <body>
   <div id="unity-container">
     <canvas id="unity-canvas"></canvas>
-    <div id="unity-loading-bar">Cargando juego...</div>
+    <div id="loading-screen">
+      <div>Cargando Delivery Mystery...</div>
+      <div id="progress-bar"><div id="progress-fill"></div></div>
+    </div>
   </div>
 
   <script>
     const gameName = "Delivery Mystery Web Play";
+    const partsData = 3;
+    const partsWasm = 3;
 
-    async function mergeFiles(baseName, parts) {
+    async function mergeParts(base, total, onProgress) {
       const buffers = [];
-      for (let i = 1; i <= parts; i++) {
-        const res = await fetch(`${baseName}.${i}`);
-        if (!res.ok) throw new Error("Error cargando parte " + i);
+      for (let i = 1; i <= total; i++) {
+        const res = await fetch(`${base}.${i}`);
+        if (!res.ok) throw new Error("No se pudo cargar parte " + i);
         const buf = await res.arrayBuffer();
         buffers.push(buf);
+        onProgress(i / total);
       }
-      const merged = new Blob(buffers);
-      return URL.createObjectURL(merged);
+      return new Blob(buffers);
     }
 
     async function startGame() {
       const canvas = document.getElementById("unity-canvas");
-      const loading = document.getElementById("unity-loading-bar");
+      const progressFill = document.getElementById("progress-fill");
+      const loading = document.getElementById("loading-screen");
 
-      const dataUrl = await mergeFiles(`${gameName}.data`, 3);
-      const wasmUrl = await mergeFiles(`${gameName}.wasm`, 3);
-
-      const config = {
-        dataUrl: dataUrl,
-        frameworkUrl: `${gameName}.framework.js`,
-        codeUrl: wasmUrl,
-        companyName: "Maximillium",
-        productName: "Delivery Mystery",
-        productVersion: "1.0"
-      };
-
-      const loader = document.createElement("script");
-      loader.src = `${gameName}.loader.js`;
-      loader.onload = () => {
-        createUnityInstance(canvas, config, (progress) => {
-          loading.innerText = "Cargando... " + Math.round(progress * 100) + "%";
-        }).then(() => {
-          loading.style.display = "none";
-        }).catch(err => {
-          alert("Error al iniciar el juego: " + err);
+      try {
+        // Unir los archivos divididos
+        progressFill.style.width = "10%";
+        const dataBlob = await mergeParts(`${gameName}.data`, partsData, (p) => {
+          progressFill.style.width = `${10 + p * 40}%`;
         });
-      };
-      document.body.appendChild(loader);
+        const wasmBlob = await mergeParts(`${gameName}.wasm`, partsWasm, (p) => {
+          progressFill.style.width = `${50 + p * 40}%`;
+        });
+
+        const config = {
+          dataUrl: URL.createObjectURL(dataBlob),
+          frameworkUrl: `${gameName}.framework.js`,
+          codeUrl: URL.createObjectURL(wasmBlob),
+          companyName: "Maximillium",
+          productName: "Delivery Mystery",
+          productVersion: "1.0"
+        };
+
+        const loader = document.createElement("script");
+        loader.src = `${gameName}.loader.js`;
+        loader.onload = () => {
+          createUnityInstance(canvas, config, (progress) => {
+            progressFill.style.width = `${90 + progress * 10}%`;
+          }).then(() => {
+            loading.style.display = "none";
+          }).catch(err => {
+            alert("Error al iniciar el juego: " + err);
+          });
+        };
+        document.body.appendChild(loader);
+
+      } catch (e) {
+        alert("Error al cargar partes: " + e.message);
+      }
     }
 
     startGame();
